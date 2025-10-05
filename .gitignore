@@ -1,0 +1,17 @@
+# Python
+*.pyc
+__pycache__/
+
+# Virtual environment
+.venv/
+
+# IDE
+.idea/
+*.iml
+misc.xml
+modules.xml
+profiles_settings.xml
+vcs.xml
+
+# Generated
+/data/processed/news.csv
