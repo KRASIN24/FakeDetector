@@ -15,3 +15,7 @@ vcs.xml
 
 # Generated
 /data/processed/news.csv
+
+# Models
+models/fake_news_model.pkl
+models/tfidf_vectorizer.pkl
