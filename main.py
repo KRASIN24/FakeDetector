@@ -1,59 +1,41 @@
-import os
+from predicting.tfidf_predict import predict_articles
+import argparse
 
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
-import matplotlib.pyplot as plt
-import seaborn as sns
+from training.tfidf_train import train_tfidf_model
 
-from processing import preprocess
-from models.model_utils import save_model, load_model
-from predict import predict_articles
 
 def main():
-    # 1) Load data
-    df = preprocess.load_processed('data/processed/news.csv', combine_title=True)
 
-    # 2) Prepare TF-IDF train/test
-    X_train_tfidf, X_test_tfidf, y_train, y_test, vectorizer = preprocess.prepare_tfidf(df)
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="tfidf",
+        choices=["tfidf", "bert"],  # extend later: bert, svm, xgboost, etc.
+        help="Model type to train"
+    )
+    args = parser.parse_args()
 
-    # 3) Train model
-    model = LogisticRegression(max_iter=1000)
-    model.fit(X_train_tfidf, y_train)
-
-    # 4) Evaluate
-    y_pred = model.predict(X_test_tfidf)
-    print(classification_report(y_test, y_pred))
-    print("Accuracy:", accuracy_score(y_test, y_pred))
-
-    # 5) Save model & vectorizer
-    model_folder = 'models'
-    model_path = os.path.join(model_folder, 'fake_news_model.pkl')
-    vectorizer_path = os.path.join(model_folder, 'tfidf_vectorizer.pkl')
-
-    # Save only if they don't exist
-    if not os.path.exists(model_path) or not os.path.exists(vectorizer_path):
-        save_model(model, vectorizer)
+    if args.model == "tfidf":
+        train_tfidf_model()
     else:
-        print("Model and vectorizer already exist. Skipping save.")
+        raise ValueError(f"Unsupported model type: {args.model}")
 
-    # 6) Confusion matrix plot
-    cm = confusion_matrix(y_test, y_pred)
-    plt.figure(figsize=(5, 4))
-    sns.heatmap(cm, annot=True, fmt='d', xticklabels=['Fake', 'True'], yticklabels=['Fake', 'True'])
-    plt.xlabel('Predicted')
-    plt.ylabel('Actual')
-    plt.title('Confusion Matrix')
-    # plt.show()
 
-    # Example usage
+    # Predicting
     new_articles = [
         "Breaking news: something happened in politics today...",
         "Celebrity scandal goes viral online!"
     ]
+
     preds = predict_articles(new_articles)
     for article, pred in zip(new_articles, preds):
         label = "True" if pred == 1 else "Fake"
         print(f"{label}: {article}")
 
-if __name__ == '__main__':
+
+
+if __name__ == "__main__":
     main()
+
+
