@@ -2,14 +2,27 @@ from __future__ import annotations
 
 import os
 import time
+import json
+import hashlib
 import requests
 from typing import List, Dict, Literal, Optional
+from datetime import datetime
 
 from newsapi import NewsApiClient
 
 SourceType = Literal["newsapi", "gnews"]
 
+CACHE_DIR = "data/cache/news"
+os.makedirs(CACHE_DIR, exist_ok=True)
 
+
+def _cache_key(source: str, query: str, language: str, limit: int) -> str:
+    raw = f"{source}|{query}|{language}|{limit}"
+    return hashlib.md5(raw.encode()).hexdigest()
+
+
+def _cache_path(key: str) -> str:
+    return os.path.join(CACHE_DIR, f"{key}.json")
 
 
 class UnifiedNewsClient:
@@ -27,10 +40,12 @@ class UnifiedNewsClient:
         newsapi_key: Optional[str] = None,
         gnews_key: Optional[str] = None,
         request_delay: float = 1.0,
+        use_cache: bool = True,
     ):
         self.newsapi_key = newsapi_key or os.getenv("NEWSAPI_KEY")
         self.gnews_key = gnews_key or os.getenv("GNEWS_API_KEY")
         self.request_delay = request_delay
+        self.use_cache = use_cache
 
         if not self.newsapi_key and not self.gnews_key:
             raise ValueError("At least one API key must be provided")
@@ -49,28 +64,42 @@ class UnifiedNewsClient:
         source: SourceType,
         language: str = "en",
         limit: int = 100,
+        force_refresh: bool = False,
     ) -> List[Dict]:
-        """
-        Fetch articles from a selected source.
 
-        Args:
-            query: Search query
-            source: "newsapi" | "gnews"
-            language: ISO language code
-            limit: Maximum number of articles
+        cache_key = _cache_key(source, query, language, limit)
+        cache_path = _cache_path(cache_key)
 
-        Returns:
-            List of normalized article dictionaries
-        """
+        if self.use_cache and not force_refresh and os.path.exists(cache_path):
+            with open(cache_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            print(f"Loaded {payload['count']} cached articles for '{query}' ({source})")
+            return payload["articles"]
+
         if source == "newsapi":
-            return self._fetch_newsapi(query, language, limit)
+            articles = self._fetch_newsapi(query, language, limit)
         elif source == "gnews":
-            return self._fetch_gnews(query, language, limit)
+            articles = self._fetch_gnews(query, language, limit)
         else:
             raise ValueError(f"Unsupported source: {source}")
 
+        if self.use_cache:
+            payload = {
+                "source": source,
+                "query": query,
+                "language": language,
+                "limit": limit,
+                "timestamp": datetime.utcnow().isoformat(),
+                "count": len(articles),
+                "articles": articles,
+            }
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+
+        return articles
+
     # ------------------------------------------------------------------
-    # NewsAPI.ai implementation
+    # NewsAPI implementation
     # ------------------------------------------------------------------
 
     def _fetch_newsapi(
