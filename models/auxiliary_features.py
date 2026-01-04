@@ -1,14 +1,23 @@
 import torch
 import pandas as pd
+import logging
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
 from functools import lru_cache
+
+# Suppress transformers device messages
+logging.getLogger("transformers").setLevel(logging.ERROR)
 
 class StanceDetector:
     def __init__(self, model_name='facebook/bart-large-mnli', device=None):
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name).to(self.device)
-        self.pipeline = pipeline('zero-shot-classification', model=self.model, tokenizer=self.tokenizer, device=0 if self.device=='cuda' else -1)
+        self.pipeline = pipeline(
+            'zero-shot-classification',
+            model=self.model,
+            tokenizer=self.tokenizer,
+            device=0 if self.device=='cuda' else -1
+        )
         self.labels = ['support', 'refute', 'neutral']
 
     @lru_cache(maxsize=1024)

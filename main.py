@@ -74,6 +74,8 @@ def main():
     if args.aux:
         aux_extractor = AuxiliaryFeatureExtractor(stance=True, emotion=True)
         aux_features = aux_extractor.compute_aux_features(new_articles)
+        print("Aux features sample:")
+        print(aux_features.head())
 
     # --------------------------------------------------
     # Model
@@ -111,9 +113,29 @@ def main():
     # Output
     # --------------------------------------------------
 
-    for text, pred in zip(new_articles, preds):
+    stance_cols = ["stance_support", "stance_refute", "stance_neutral"]
+    emotion_cols = ["emotion_anger", "emotion_fear", "emotion_joy", "emotion_love", "emotion_sadness",
+                    "emotion_surprise"]
+
+    for i, (text, pred) in enumerate(zip(new_articles, preds)):
         label = "True" if pred == 1 else "Fake"
-        print(f"{label}: {text[:200]}{'...' if len(text) > 200 else ''}")
+        print(f"\n=== Article {i + 1} ===")
+        print(f"Prediction: {label}")
+        print(f"Text: {text}")
+        # print(f"Text: {text[:300]}{'...' if len(text) > 300 else ''}")
+
+        if aux_features is not None:
+            aux_row = aux_features.iloc[i]
+
+            # Stance
+            stance_vals = {c.split('_')[-1].capitalize(): round(aux_row[c] * 100, 1) for c in stance_cols}
+            stance_str = ", ".join([f"{k}: {v}%" for k, v in stance_vals.items()])
+            print(f"Stance: {stance_str}")
+
+            # Emotion
+            emotion_vals = {c.split('_')[-1].capitalize(): round(aux_row[c] * 100, 1) for c in emotion_cols}
+            emotion_str = ", ".join([f"{k}: {v}%" for k, v in emotion_vals.items()])
+            print(f"Emotion: {emotion_str}")
 
 
 if __name__ == "__main__":
