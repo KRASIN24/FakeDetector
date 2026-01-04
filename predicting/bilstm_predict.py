@@ -5,6 +5,7 @@ import pandas as pd
 
 from training.bilstm_train import BiLSTMAttentionClassifier, get_device, train_bilstm_model
 from models.model_utils import encode
+import numpy as np
 
 # -----------------------------
 # Model path
@@ -45,15 +46,39 @@ def load_bilstm(model_path=MODEL_PATH):
 # -----------------------------
 # Predict function
 # -----------------------------
-def predict_bilstm(texts, max_len=512):
-    model, stoi, device = load_bilstm()  # load model
+def predict_bilstm(texts, aux_features=None, max_len=512):
+    """
+    texts: list of strings
+    aux_features: pd.DataFrame or None, shape [num_texts, aux_dim]
+    """
+    model, stoi, device = load_bilstm()
+    model.eval()
+
     preds = []
 
-    with torch.no_grad():  # disable gradient for inference
-        for text in texts:
-            # Encode text and move to device
-            x = torch.tensor([encode(text, stoi, max_len)], device=device)
-            logits = model(x)
+    # convert aux_features to a single torch tensor once
+    if aux_features is not None:
+        aux_tensor = torch.tensor(
+            aux_features.to_numpy(dtype=np.float32),
+            device=device
+        )
+    else:
+        aux_tensor = None
+
+    with torch.no_grad():
+        for i, text in enumerate(texts):
+            # encode text
+            x_enc = encode(text, stoi, max_len)
+            x_tensor = torch.tensor([x_enc], device=device)  # shape [1, seq_len]
+
+            # get embedding
+            x_emb = model.embedding(x_tensor)  # [1, seq_len, embed_dim]
+
+            # get aux row if exists
+            aux_row = aux_tensor[i:i+1] if aux_tensor is not None else None  # [1, aux_dim]
+
+            # forward through LSTM + attention
+            logits = model.forward_from_embedding(x_emb, aux=aux_row)
             preds.append(logits.argmax(dim=1).item())
 
     return preds

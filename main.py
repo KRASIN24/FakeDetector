@@ -2,6 +2,7 @@ import os
 import argparse
 import pandas as pd
 
+from models.auxiliary_features import AuxiliaryFeatureExtractor
 from predicting.bert_predict import load_bert, predict_bert
 from predicting.tfidf_predict import predict_articles
 from predicting.bilstm_predict import predict_bilstm
@@ -12,6 +13,7 @@ from training.tfidf_train import train_tfidf_model
 from services.news_cache import load_cache, load_cached_articles
 
 
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -20,6 +22,7 @@ def main():
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--dataset", type=str, default="default")
     parser.add_argument("--model", choices=["tfidf", "bert", "bilstm"], default="tfidf")
+    parser.add_argument("--aux", action="store_true", help="Enable auxiliary stance/emotion features")
 
     args = parser.parse_args()
 
@@ -63,6 +66,16 @@ def main():
         return
 
     # --------------------------------------------------
+    # Auxiliary features (optional)
+    # --------------------------------------------------
+
+    aux_features = None
+
+    if args.aux:
+        aux_extractor = AuxiliaryFeatureExtractor(stance=True, emotion=True)
+        aux_features = aux_extractor.compute_aux_features(new_articles)
+
+    # --------------------------------------------------
     # Model
     # --------------------------------------------------
 
@@ -70,7 +83,7 @@ def main():
         if not os.path.exists("models/tfidf"):
             train_tfidf_model()
 
-        preds = predict_articles(new_articles)
+        preds = predict_articles(new_articles, aux_features=aux_features)
 
     elif args.model == "bert":
         train_df = pd.read_csv("data/processed/news.csv")
@@ -80,7 +93,7 @@ def main():
             train_bert_model(train_df=train_df, val_df=val_df)
 
         model, tokenizer = load_bert("models/bert")
-        preds = predict_bert(new_articles, model, tokenizer)
+        preds = predict_bert(new_articles, model, tokenizer, aux_features=aux_features)
 
     elif args.model == "bilstm":
         train_df = pd.read_csv("data/processed/news.csv")
@@ -89,7 +102,7 @@ def main():
         if not os.path.exists("models/bilstm"):
             train_bilstm_model(train_df=train_df, val_df=val_df)
 
-        preds = predict_bilstm(new_articles)
+        preds = predict_bilstm(new_articles, aux_features=aux_features)
 
     else:
         raise ValueError(f"Unsupported model: {args.model}")
