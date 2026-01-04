@@ -4,8 +4,10 @@ import pandas as pd
 
 from predicting.bert_predict import load_bert, predict_bert
 from predicting.tfidf_predict import predict_articles
+from predicting.bilstm_predict import predict_bilstm
 from services.news_api_client import UnifiedNewsClient
 from training.bert_train import train_bert_model
+from training.bilstm_train import train_bilstm_model
 from training.tfidf_train import train_tfidf_model
 from services.news_cache import load_cache, load_cached_articles
 
@@ -17,7 +19,7 @@ def main():
     parser.add_argument("--source", choices=["newsapi", "gnews", "both"], default="both")
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--dataset", type=str, default="default")
-    parser.add_argument("--model", choices=["tfidf", "bert"], default="tfidf")
+    parser.add_argument("--model", choices=["tfidf", "bert", "bilstm"], default="tfidf")
 
     args = parser.parse_args()
 
@@ -79,6 +81,15 @@ def main():
 
         model, tokenizer = load_bert("models/bert")
         preds = predict_bert(new_articles, model, tokenizer)
+
+    elif args.model == "bilstm":
+        train_df = pd.read_csv("data/processed/news.csv")
+        val_df = train_df.sample(frac=0.1, random_state=42)
+
+        if not os.path.exists("models/bilstm"):
+            train_bilstm_model(train_df=train_df, val_df=val_df)
+
+        preds = predict_bilstm(new_articles)
 
     else:
         raise ValueError(f"Unsupported model: {args.model}")
