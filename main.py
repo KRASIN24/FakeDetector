@@ -13,7 +13,6 @@ from training.tfidf_train import train_tfidf_model
 from services.news_cache import load_cache, load_cached_articles
 
 
-
 def main():
     parser = argparse.ArgumentParser()
 
@@ -23,6 +22,7 @@ def main():
     parser.add_argument("--dataset", type=str, default="default")
     parser.add_argument("--model", choices=["tfidf", "bert", "bilstm"], default="tfidf")
     parser.add_argument("--aux", action="store_true", help="Enable auxiliary stance/emotion features")
+    parser.add_argument("--retrain", action="store_true", help="Force retrain the model even if it exists")
 
     args = parser.parse_args()
 
@@ -72,6 +72,7 @@ def main():
     aux_features = None
 
     if args.aux:
+        print("\n🔧 Computing auxiliary features (stance + emotion)...")
         aux_extractor = AuxiliaryFeatureExtractor(stance=True, emotion=True)
         aux_features = aux_extractor.compute_aux_features(new_articles)
         print("Aux features sample:")
@@ -82,26 +83,71 @@ def main():
     # --------------------------------------------------
 
     if args.model == "tfidf":
-        if not os.path.exists("models/tfidf"):
+        # TF-IDF uses separate paths for aux/no-aux
+        model_dir = "models/tfidf_aux" if args.aux else "models/tfidf"
+
+        if not os.path.exists(model_dir) or args.retrain:
             train_tfidf_model()
 
         preds = predict_articles(new_articles, aux_features=aux_features)
 
     elif args.model == "bert":
+        # Use separate directories for BERT with/without aux
+        model_dir = "models/bert_aux" if args.aux else "models/bert"
+
+        print(f"\n📁 Using model directory: {model_dir}")
+
+        # Load training data
         train_df = pd.read_csv("data/processed/news.csv")
         val_df = train_df.sample(frac=0.1, random_state=42)
+        train_df = train_df.drop(val_df.index)  # Remove validation samples from training
 
-        if not os.path.exists("models/bert"):
-            train_bert_model(train_df=train_df, val_df=val_df)
+        # Check if model needs to be trained
+        if not os.path.exists(model_dir) or args.retrain:
+            if args.retrain and os.path.exists(model_dir):
+                print(f"🗑️  Removing existing model at {model_dir}")
+                import shutil
+                shutil.rmtree(model_dir)
 
-        model, tokenizer = load_bert("models/bert")
+            print(f"\n🏋️ Training BERT model {'WITH' if args.aux else 'WITHOUT'} auxiliary features...")
+
+            # Compute aux features for training data if --aux is enabled
+            aux_features_train = None
+            aux_features_val = None
+
+            if args.aux:
+                print("🔧 Computing auxiliary features for training data...")
+                aux_extractor = AuxiliaryFeatureExtractor(stance=True, emotion=True)
+                aux_features_train = aux_extractor.compute_aux_features(train_df.text.tolist())
+                aux_features_val = aux_extractor.compute_aux_features(val_df.text.tolist())
+                print(f"   Training aux features shape: {aux_features_train.shape}")
+                print(f"   Validation aux features shape: {aux_features_val.shape}")
+
+            # Train with aux features if enabled
+            train_bert_model(
+                train_df=train_df,
+                val_df=val_df,
+                aux_features_train=aux_features_train,
+                aux_features_val=aux_features_val,
+                save_dir=model_dir,  # Use the appropriate directory
+            )
+        else:
+            print(f"✓ Model already exists at {model_dir}")
+
+        # Load and predict
+        print(f"\n📥 Loading model from {model_dir}")
+        model, tokenizer = load_bert(model_dir)
         preds = predict_bert(new_articles, model, tokenizer, aux_features=aux_features)
 
     elif args.model == "bilstm":
+        # BiLSTM uses separate paths for aux/no-aux
+        model_dir = "models/bilstm_aux" if args.aux else "models/bilstm"
+
         train_df = pd.read_csv("data/processed/news.csv")
         val_df = train_df.sample(frac=0.1, random_state=42)
+        train_df = train_df.drop(val_df.index)
 
-        if not os.path.exists("models/bilstm"):
+        if not os.path.exists(model_dir) or args.retrain:
             train_bilstm_model(train_df=train_df, val_df=val_df)
 
         preds = predict_bilstm(new_articles, aux_features=aux_features)
@@ -117,12 +163,15 @@ def main():
     emotion_cols = ["emotion_anger", "emotion_fear", "emotion_joy", "emotion_love", "emotion_sadness",
                     "emotion_surprise"]
 
+    print("\n" + "=" * 80)
+    print(f"PREDICTIONS - Model: {args.model.upper()}{'_AUX' if args.aux else ''}")
+    print("=" * 80)
+
     for i, (text, pred) in enumerate(zip(new_articles, preds)):
         label = "True" if pred == 1 else "Fake"
         print(f"\n=== Article {i + 1} ===")
         print(f"Prediction: {label}")
-        print(f"Text: {text}")
-        # print(f"Text: {text[:300]}{'...' if len(text) > 300 else ''}")
+        print(f"Text: {text[:200]}{'...' if len(text) > 200 else ''}")
 
         if aux_features is not None:
             aux_row = aux_features.iloc[i]

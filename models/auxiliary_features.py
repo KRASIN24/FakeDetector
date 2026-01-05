@@ -42,6 +42,7 @@ class EmotionExtractor:
             model=self.model,
             tokenizer=self.tokenizer,
             top_k=None,  # replacement for deprecated return_all_scores
+            truncation=True,
             device=0 if self.device == 'cuda' else -1
         )
         # Predefined emotion labels based on model
