@@ -22,7 +22,6 @@ def main():
     parser.add_argument("--dataset", type=str, default="default")
     parser.add_argument("--model", choices=["tfidf", "bert", "bilstm"], default="tfidf")
     parser.add_argument("--aux", action="store_true", help="Enable auxiliary stance/emotion features")
-    parser.add_argument("--retrain", action="store_true", help="Force retrain the model even if it exists")
 
     args = parser.parse_args()
 
@@ -73,8 +72,8 @@ def main():
 
     if args.aux:
         print("\n🔧 Computing auxiliary features (stance + emotion)...")
-        aux_extractor = AuxiliaryFeatureExtractor(stance=True, emotion=True)
-        aux_features = aux_extractor.compute_aux_features(new_articles)
+        aux_extractor = AuxiliaryFeatureExtractor(stance=True, emotion=True, batch_size=32)
+        aux_features = aux_extractor.compute_aux_features(new_articles, show_progress=True)
         print("Aux features sample:")
         print(aux_features.head())
 
@@ -86,10 +85,22 @@ def main():
         # TF-IDF uses separate paths for aux/no-aux
         model_dir = "models/tfidf_aux" if args.aux else "models/tfidf"
 
-        if not os.path.exists(model_dir) or args.retrain:
-            train_tfidf_model()
+        print(f"\n📁 Using model directory: {model_dir}")
 
-        preds = predict_articles(new_articles, aux_features=aux_features)
+        # Check if model FILES exist, not just the directory
+        model_path = os.path.join(model_dir, "model.pkl")
+
+        if not os.path.exists(model_path):
+            print(f"\n🏋️ Training TF-IDF model {'WITH' if args.aux else 'WITHOUT'} auxiliary features...")
+            train_tfidf_model(
+                save_dir=model_dir,
+                aux_features=args.aux
+            )
+        else:
+            print(f"✓ Model already exists at {model_dir}")
+
+        print(f"\n📥 Loading model from {model_dir}")
+        preds = predict_articles(new_articles, aux_features=aux_features, model_dir=model_dir)
 
     elif args.model == "bert":
         # Use separate directories for BERT with/without aux
@@ -117,9 +128,9 @@ def main():
 
             if args.aux:
                 print("🔧 Computing auxiliary features for training data...")
-                aux_extractor = AuxiliaryFeatureExtractor(stance=True, emotion=True)
-                aux_features_train = aux_extractor.compute_aux_features(train_df.text.tolist())
-                aux_features_val = aux_extractor.compute_aux_features(val_df.text.tolist())
+                aux_extractor = AuxiliaryFeatureExtractor(stance=True, emotion=True, batch_size=32)
+                aux_features_train = aux_extractor.compute_aux_features(train_df.text.tolist(), show_progress=True)
+                aux_features_val = aux_extractor.compute_aux_features(val_df.text.tolist(), show_progress=True)
                 print(f"   Training aux features shape: {aux_features_train.shape}")
                 print(f"   Validation aux features shape: {aux_features_val.shape}")
 
